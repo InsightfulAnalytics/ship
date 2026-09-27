@@ -1,9 +1,9 @@
 ---
 name: ship
-description: "Ship the current work: branch off the default branch if needed, commit, push, open a PR. `/ship merge` also squash-merges and prunes."
+description: "Ship the current work: branch off the default branch if needed, commit, push, open a PR. `/ship merge` also lands it once it is up to date, conflict-free and every check has passed, then prunes."
 argument-hint: "[merge] [notes]"
 disable-model-invocation: true
-allowed-tools: Bash(git status *) Bash(git rev-parse *) Bash(git remote -v) Bash(git remote get-url *) Bash(git remote set-head *) Bash(git fetch *) Bash(git log *) Bash(git diff *) Bash(git grep *) Bash(git ls-files *) Bash(git merge-base *) Bash(git switch -c *) Bash(git switch --no-track -c *) Bash(git switch main) Bash(git switch master) Bash(git add -A) Bash(git add -- *) Bash(git reset -q -- *) Bash(git commit *) Bash(git cherry-pick *) Bash(git push --recurse-submodules=check -u origin HEAD) Bash(git pull --ff-only *) Bash(git branch -vv) Bash(git branch -d *) Bash(git branch -D *) Bash(git branch -f *) Bash(gh auth status *) Bash(gh pr view *) Bash(gh pr list *) Bash(gh pr create *) Bash(gh pr merge * --squash --delete-branch --match-head-commit *) Bash(gh pr merge * --merge --delete-branch --match-head-commit *) Bash(gh pr merge * --rebase --delete-branch --match-head-commit *) Bash(gh pr merge * --squash --match-head-commit *) Bash(pbir desktop list *)
+allowed-tools: Bash(git status *) Bash(git rev-parse *) Bash(git remote -v) Bash(git remote get-url *) Bash(git remote set-head *) Bash(git fetch *) Bash(git log *) Bash(git diff *) Bash(git grep *) Bash(git ls-files *) Bash(git merge-base *) Bash(git switch -c *) Bash(git switch --no-track -c *) Bash(git switch main) Bash(git switch master) Bash(git add -A) Bash(git add -- *) Bash(git reset -q -- *) Bash(git commit *) Bash(git cherry-pick *) Bash(git push --recurse-submodules=check -u origin HEAD) Bash(git pull --ff-only *) Bash(git branch -vv) Bash(git branch -d *) Bash(git branch -D *) Bash(git branch -f *) Bash(gh auth status *) Bash(gh pr view *) Bash(gh pr list *) Bash(gh pr create *) Bash(gh pr merge * --squash --delete-branch --match-head-commit *) Bash(gh pr merge * --merge --delete-branch --match-head-commit *) Bash(gh pr merge * --rebase --delete-branch --match-head-commit *) Bash(gh pr merge * --squash --match-head-commit *) Bash(gh pr checks *) Bash(git merge --no-edit origin/*) Bash(git merge --abort) Bash(npm ci) Bash(npm run * --if-present) Bash(python -m pytest -q) Bash(pbir validate *) Bash(pbir desktop list *)
 ---
 
 # Ship
@@ -84,7 +84,7 @@ Stop and report, rather than working around it, when:
   `git log origin/<default>..HEAD` is empty or this branch's PR is MERGED and
   `git log --no-merges <headRefOid>..HEAD ^origin/<default>` is empty. With no `origin`, such a
   tree alone. With an empty origin, only under `No commits yet`, since any local commit is
-  unpushed. In `merge` mode, when this branch's PR is MERGED and nothing is new, skip to step 6.2
+  unpushed. In `merge` mode, when this branch's PR is MERGED and nothing is new, skip to step 6.5
   instead, whichever clause matched.
 
 Wherever `<headRefOid>` is missing from this clone (git says `Invalid revision range` or
@@ -268,9 +268,53 @@ early stops above, when the stop is reported and any push it made succeeded.
 
 With an empty mode, go to the report.
 
-1. Merge by `<pr url>`, which carries GitHub's own spelling of the owner that `--delete-branch`
-   needs, pinned to the commit you pushed:
-   `gh pr merge <pr url> -R <url> --squash --delete-branch --match-head-commit <sha of HEAD>`.
+Nothing lands on the default branch until the PR's head already contains the current default
+branch, GitHub sees no conflict, and every check on that exact head has passed. Steps 6.1 to 6.3
+are that gate. A stop anywhere in it leaves the PR open and unmerged.
+
+1. **Up to date.** `git fetch origin <default>`, then
+   `git merge-base --is-ancestor origin/<default> HEAD`. When that fails, the default branch has
+   moved on since this branch left it, and the checks so far ran against an older base:
+   - Run the Desktop guard again, since the merge rewrites files. Then
+     `git merge --no-edit origin/<default>`.
+   - A conflict is a stop-and-report: list the paths from `git diff --name-only --diff-filter=U`,
+     then `git merge --abort`. Never resolve a conflict under this skill, and never rebase or
+     force-push a pushed branch to get round one.
+   - After a clean merge, push (`git push --recurse-submodules=check -u origin HEAD`) so the
+     checks run again on the merged result.
+2. **No conflict on GitHub.** Read
+   `gh pr view <pr url> -R <url> --json headRefOid,isDraft,mergeable`.
+   - `headRefOid` must equal `git rev-parse HEAD`. Anything else means somebody else pushed:
+     stop and report.
+   - A draft, or `mergeable: CONFLICTING`, is a stop-and-report.
+   - `mergeable: UNKNOWN` means GitHub is still working it out: read it again at the end of 6.3.
+3. **Every check passed.** Wait with
+   `gh pr checks <pr url> -R <url> --watch --fail-fast --interval 30` and the 600000 ms timeout.
+   On a timeout run it once more, then stop and report. Then read
+   `gh pr checks <pr url> -R <url> --json name,bucket,link`:
+   - Every check's `bucket` must be `pass` or `skipping`. A `fail`, `cancel` or `pending` check is
+     a stop-and-report that names the check and its link. Checks that branch protection does not
+     require count too: a red optional check still stops the merge.
+   - `no checks reported` means the repo has no CI for this branch. Run its own checks on HEAD
+     instead (below).
+   - Read 6.2's fields again: `mergeable` must now say `MERGEABLE`, and `headRefOid` must not have
+     moved.
+   - `git fetch origin <default>` once more. If the default branch moved while the checks ran,
+     go back to 6.1. A third time round is a stop-and-report: the branch cannot keep up with a
+     busy default branch, and the user decides.
+
+   **Local checks, only when the repo has no CI.** From the repo root, run what the repo itself
+   defines, and require exit 0 from every command:
+   - `package.json`: `npm ci` when `node_modules` is missing, then `npm run <name> --if-present`
+     for `typecheck`, `lint`, `test` and `build`, in that order.
+   - A Python project with a pytest configuration: `python -m pytest -q`.
+   - A PBIP repo with pbir installed: `pbir validate "<path>.Report"` for each report the PR
+     changes.
+   - A repo that defines no checks at all: stop and ask. Merging unchecked work is the user's
+     call.
+4. **Merge** by `<pr url>`, which carries GitHub's own spelling of the owner that
+   `--delete-branch` needs, pinned to the head that passed the gate:
+   `gh pr merge <pr url> -R <url> --squash --delete-branch --match-head-commit <headRefOid>`.
    With `-R`, gh merges and deletes the remote branch and leaves this checkout alone.
    - GitHub refuses squash merges: use `--merge`, or `--rebase` if that is refused too, and say
      which.
@@ -279,25 +323,27 @@ With an empty mode, go to the report.
    - Any other refusal (conflicts, required checks, missing reviews, a draft, a moved head) is a
      stop-and-report; quote its message.
    - gh prints nothing on success here, so read `gh pr view <pr url> -R <url> --json state`. OPEN
-     means queued: report that and stop, and a later `/ship merge` finishes 6.2 and 6.3.
+     means queued: report that and stop, and a later `/ship merge` finishes 6.5 and 6.6.
    - Merges run without `--admin` or `--auto`.
-2. Run the Desktop guard again, since the next commands rewrite files under Desktop. Then
+5. Run the Desktop guard again, since the next commands rewrite files under Desktop. Then
    `git switch <default> && git pull --ff-only origin <default>`. If git says the default branch
    is already used by a worktree, skip this and say so.
-3. Prune: `git fetch --prune`, then take every local branch that `git branch -vv` marks gone
+6. Prune: `git fetch --prune`, then take every local branch that `git branch -vv` marks gone
    (`[origin/<branch>: gone]`). Delete it with `git branch -d`. When `-d` refuses (a squash merge
    looks unmerged to git), use `git branch -D` only when
    `gh pr list -R <url> --head <branch> --state merged --json headRefOid --jq '.[].headRefOid'`
    prints the sha from `git rev-parse <branch>`. Otherwise keep the branch and list it.
 
-Done when `gh pr view <pr url> -R <url> --json state` says MERGED, HEAD is the updated default
-branch (or the worktree skip was reported), and every gone branch whose tip is a merged PR's head
-is deleted, apart from one git refuses because a worktree has it checked out (listed).
+Done when the gate passed on the head that was merged, `gh pr view <pr url> -R <url> --json state`
+says MERGED, HEAD is the updated default branch (or the worktree skip was reported), and every
+gone branch whose tip is a merged PR's head is deleted, apart from one git refuses because a
+worktree has it checked out (listed).
 
 ## 7. Report
 
 Branch, commits (short sha and subject), unpushed default-branch commits that rode along, PR URL
-and state, quarantined paths, edits left unstaged, and every step skipped with its reason. Read
-the PR state from `gh pr view`, not from memory. If files under a report that Desktop holds
-changed on disk (task edits, step 3, step 6.2), tell the user to accept Desktop's "Apply external
-changes" banner.
+and state, quarantined paths, edits left unstaged, and every step skipped with its reason. In
+`merge` mode, also the gate: any merge of the default branch 6.1 made, and each check with its
+result (or each local command run instead). Read the PR state from `gh pr view`, not from memory.
+If files under a report that Desktop holds changed on disk (task edits, step 3, step 6.1,
+step 6.5), tell the user to accept Desktop's "Apply external changes" banner.
