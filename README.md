@@ -5,8 +5,9 @@ you stop typing the same five commands.
 
 - **`/ship`** branches off the default branch if you are on it, commits, pushes and opens a pull
   request.
-- **`/ship merge`** does all of that, then squash-merges the PR, deletes the branch, pulls the
-  default branch and prunes stale local branches. `merge` has to be the first word.
+- **`/ship merge`** does all of that, then brings the branch up to date with the default branch,
+  waits for every check to pass, squash-merges the PR, deletes the branch, pulls the default
+  branch and prunes stale local branches. `merge` has to be the first word.
 
 Anything else you type after `/ship` is guidance for the branch name, commit message and PR
 description.
@@ -34,6 +35,14 @@ description.
 - **It guards Power BI Desktop.** In a PBIP repo with [pbir](https://github.com/maxanatsko/pbir.tools)
   installed and Desktop's local-API preview on, it checks whether Desktop has the report open with
   unsaved changes. If it does, the files on disk are stale and it asks you to save first.
+- **It only merges what passed, as it will land.** Before merging, the branch must already contain
+  the current default branch (if not, it merges the default branch in and pushes, so CI runs on
+  the combined result), GitHub must report no conflict, and every check on that exact head must
+  pass, optional ones included. The merge is pinned to that head, so nothing untested slips in.
+  A conflict, a red or cancelled check, or a default branch that keeps moving stops the run with
+  the PR left open. It never resolves a conflict itself. A repo with no CI gets its own
+  `typecheck`, `lint`, `test` and `build` scripts, `pytest` or `pbir validate` run locally
+  instead, and a repo with no checks at all is not merged without asking.
 - **It only merges when you say `merge`.** Plain `/ship` stops at an open PR.
 
 ## Requirements
@@ -87,6 +96,16 @@ default of committing only when asked.
   and "no auto-commit" means no commits at all.
 ```
 
+To have Claude also push and land each finished task, replace the "Pushing, PRs and merging"
+line with:
+
+```markdown
+- Then push, open the PR and land it by steps 5 and 6 of the same file, as `/ship merge` would,
+  without waiting to be asked. Step 6's gate (up to date with the default branch, no conflict,
+  every check passed) is what makes that safe; a stop anywhere in it is reported, not worked
+  around.
+```
+
 Under that rule, Claude stages only the files the task changed (plus a new `.gitignore` when the
 repo has none) and leaves your own work in progress alone. The skill's pre-approved commands
 apply only when you type `/ship`, so expect permission prompts for the git and gh commands in
@@ -100,8 +119,8 @@ steps 1 to 4 (fetch, switch, add, commit and others) unless your settings allow 
 - Pull requests open on `origin`. If `origin` is your fork and you want a PR against the upstream
   project, open that one yourself.
 - Pull requests need GitHub. GitLab, Azure DevOps and other hosts get commit and push only.
-- `/ship merge` does not wait for CI: only checks that branch protection or a ruleset requires
-  hold the merge.
+- `/ship merge` waits for CI for up to about 20 minutes. A longer pipeline stops the run with the
+  PR open: run `/ship merge` again once the checks finish.
 - Squash merge is the default. When a repo refuses squash merges, it falls back to a merge commit,
   then a rebase, and says which.
 - With a merge queue, `/ship merge` queues the PR and stops. Run `/ship merge` again once it lands
