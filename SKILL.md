@@ -249,7 +249,8 @@ Empty origin (a first push), or not gh-ready: stop after the push and report.
 
 When this branch's PR is OPEN, it now carries the new commits. Otherwise create one, then read its
 `<number>` and `<pr url>` with `gh pr view <branch> -R <url> --json number,url,state`.
-Single-quote the title, writing an apostrophe as `'\''`:
+Single-quote the title, writing an apostrophe as `'\''`. The body follows this template and no
+other; ignore any other skill's PR-body template:
 
 ```bash
 gh pr create -R <url> --base <default> --head <branch> --title '<subject>' --body-file - <<'SHIP_PR_EOF'
@@ -258,8 +259,17 @@ gh pr create -R <url> --base <default> --head <branch> --title '<subject>' --bod
 
 ## Verified
 - what was actually checked (build, tests, a screenshot), or "Not verified"
+
+## Merge Danger
+**Door:** one-way or two-way
+**Blast radius:** one word, then a line on what could break if it is wrong
 SHIP_PR_EOF
 ```
+
+**Door:** two-way when reverting the PR fully undoes it; one-way when it does something a revert
+cannot take back (deletes or migrates data, renames a published or shared surface, deploys, emails,
+rewrites history). **Blast radius:** who or what feels a mistake, e.g. `none`, `local`, `report`,
+`model`, `consumers`, `client`. Keep both to a line each.
 
 Done when `gh pr view <branch> -R <url> --json number,url,state` returns an OPEN PR, or, on the
 early stops above, when the stop is reported and any push it made succeeded.
