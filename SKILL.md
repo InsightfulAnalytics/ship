@@ -3,7 +3,7 @@ name: ship
 description: "Ship the current work: branch off the default branch if needed, commit, push, open a PR. `/ship merge` also lands it once it is up to date, conflict-free and every check has passed, then prunes."
 argument-hint: "[merge] [notes]"
 disable-model-invocation: true
-allowed-tools: Bash(git status *) Bash(git rev-parse *) Bash(git remote -v) Bash(git remote get-url *) Bash(git remote set-head *) Bash(git fetch *) Bash(git log *) Bash(git diff *) Bash(git grep *) Bash(git ls-files *) Bash(git merge-base *) Bash(git switch -c *) Bash(git switch --no-track -c *) Bash(git switch main) Bash(git switch master) Bash(git add -A) Bash(git add -- *) Bash(git reset -q -- *) Bash(git commit *) Bash(git cherry-pick *) Bash(git push --recurse-submodules=check -u origin HEAD) Bash(git pull --ff-only *) Bash(git branch -vv) Bash(git branch -d *) Bash(git branch -D *) Bash(git branch -f *) Bash(gh auth status *) Bash(gh pr view *) Bash(gh pr list *) Bash(gh pr create *) Bash(gh pr merge * --squash --delete-branch --match-head-commit *) Bash(gh pr merge * --merge --delete-branch --match-head-commit *) Bash(gh pr merge * --rebase --delete-branch --match-head-commit *) Bash(gh pr merge * --squash --match-head-commit *) Bash(gh pr checks *) Bash(git merge --no-edit origin/*) Bash(git merge --abort) Bash(npm ci) Bash(npm run * --if-present) Bash(python -m pytest -q) Bash(pbir validate *) Bash(pbir desktop list *)
+allowed-tools: Bash(git status *) Bash(git rev-parse *) Bash(git remote -v) Bash(git remote get-url *) Bash(git remote set-head *) Bash(git fetch *) Bash(git log *) Bash(git diff *) Bash(git grep *) Bash(git ls-files *) Bash(git merge-base *) Bash(git switch -c *) Bash(git switch --no-track -c *) Bash(git switch main) Bash(git switch master) Bash(git add -A) Bash(git add -- *) Bash(git reset -q -- *) Bash(git commit *) Bash(git cherry-pick *) Bash(git push --recurse-submodules=check -u origin HEAD) Bash(git branch -vv) Bash(git branch -d *) Bash(git branch -D *) Bash(git branch -f *) Bash(gh auth status *) Bash(gh pr view *) Bash(gh pr list *) Bash(gh pr create *) Bash(gh pr merge * --squash --delete-branch --match-head-commit *) Bash(gh pr merge * --merge --delete-branch --match-head-commit *) Bash(gh pr merge * --rebase --delete-branch --match-head-commit *) Bash(gh pr merge * --squash --match-head-commit *) Bash(gh pr checks *) Bash(git merge --no-edit origin/*) Bash(git merge --abort) Bash(npm ci) Bash(npm run * --if-present) Bash(python -m pytest -q) Bash(pbir validate *) Bash(pbir desktop list *)
 ---
 
 # Ship
@@ -35,7 +35,7 @@ closed PR) and `references/landing.md` (step 6 detail, local checks, refusals).
 - If the shell is elsewhere, `cd "<repo root>"` in a Bash call of its own first: the pre-approved
   commands match neither `git -C` nor `cd ... && git`. `Shell cwd was reset` means the repo is
   outside this session's directories: ask the user to `/add-dir` it and run the command again.
-- Give `git commit`, `git cherry-pick`, `git push` and `git pull` the 600000 ms timeout. A timeout
+- Give `git commit`, `git cherry-pick`, `git push` and `git fetch` the 600000 ms timeout. A timeout
   is a stop-and-report.
 - When git refuses a command to protect local changes, stop and report. The forcing flags (`-f`,
   `--discard-changes`, `--merge`) are the user's call; a half-done cherry-pick gets
@@ -231,7 +231,13 @@ anything but succeed.
 4. **Merge**, pinned to the head that passed:
    `gh pr merge <pr url> -R <url> --squash --delete-branch --match-head-commit <headRefOid>`.
    Read `gh pr view <pr url> -R <url> --json state`: MERGED, or see `references/landing.md`.
-5. Run the Desktop guard again, then `git switch <default> && git pull --ff-only origin <default>`.
+5. **Switch back.** Run the Desktop guard again, then `git fetch origin <default>`. When
+   `git merge-base --is-ancestor <default> origin/<default>` succeeds, run
+   `git branch -f <default> origin/<default>`, then `git switch <default>`; when it fails, stop
+   and report the local commits on the default branch that origin lacks. Move the branch before
+   switching, never switch and then pull: a PR that untracks files (`git rm --cached` plus
+   `.gitignore`) leaves them on disk, switching to the old default first rewrites them, and the
+   pull then deletes them.
 6. Prune: `git fetch --prune`, then delete each branch `git branch -vv` marks gone, as
    `references/landing.md` says.
 

@@ -51,7 +51,8 @@ what the repo itself defines, and require exit 0 from every command:
 
 ## 6.5 and 6.6 Switching back and pruning
 
-- If git says the default branch is already used by a worktree, skip the switch and say so.
+- If git says the default branch is already used by a worktree, skip the branch move and the
+  switch, and say so.
 - Prune every local branch that `git branch -vv` marks `[origin/<branch>: gone]` with
   `git branch -d`. When `-d` refuses (a squash merge looks unmerged to git), use `git branch -D`
   only when
