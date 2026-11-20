@@ -233,10 +233,13 @@ tests must hold:
   - data a pipeline, report or model reads, or content a build publishes (a `.md` inside a site's
     input folder is content, not a note)
   - agent configuration that runs or grants something: `.claude/settings*.json`, hooks and the
-    scripts they run, `.mcp.json`, and any command, agent or skill file whose frontmatter sets
-    `allowed-tools`, `tools` or `hooks`
-  - a rule in `CLAUDE.md` or `AGENTS.md` about committing, merging, deploying or permissions, as
-    the default branch's copy states it
+    scripts they run, `.mcp.json`, and any command, agent or skill file whose frontmatter grants,
+    denies or configures tools, hooks, permissions or MCP servers (`allowed-tools`, `tools`,
+    `disallowedTools`, `hooks`, `permissionMode`, `mcpServers` and the like)
+  - a rule about committing, merging, deploying, permissions or security review, added, changed
+    or removed, in any file an agent loads as instructions: `CLAUDE.md`, `CLAUDE.local.md`,
+    `AGENTS.md`, `.claude/rules/**`, and a skill, command or agent file with the files it points
+    to. Judge a change to an existing rule by the default branch's copy
 - **Same build.** When a host or CI builds and deploys the repo (Workers Builds, Pages, Actions),
   build the PR head and the default branch the same way and compare the output folders: they
   must be identical. A build that cannot run here fails this test.

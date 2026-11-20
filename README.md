@@ -49,9 +49,10 @@ description.
   instead, and a repo with no checks at all is not merged without asking.
 - **It lands notes without the wait.** A PR with no blast radius changes only paths that nothing
   built, deployed or run reads: notes, docs, and agent instructions, but not Claude Code settings,
-  hooks, MCP config or a rule about committing, merging, deploying or permissions. When a host or
-  CI builds the repo, the PR's build output must also match the default branch's. `/ship merge`
-  lands such a PR even in a repo that holds PRs for your OK, and in one with no checks.
+  hooks, MCP config, tool grants, or a rule about committing, merging, deploying, permissions or
+  security review, wherever it is written. When a host or CI builds the repo, the PR's build
+  output must also match the default branch's. `/ship merge` lands such a PR even in a repo that
+  holds PRs for your OK, and in one with no checks.
 - **It only merges when you say `merge`.** Plain `/ship` stops at an open PR.
 
 ## Requirements
