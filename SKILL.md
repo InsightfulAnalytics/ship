@@ -3,7 +3,7 @@ name: ship
 description: "Ship the current work: branch off the default branch if needed, commit, push, open a PR. `/ship merge` also lands it once it is up to date, conflict-free and every check has passed, then prunes."
 argument-hint: "[merge] [notes]"
 disable-model-invocation: true
-allowed-tools: Bash(git status *) Bash(git rev-parse *) Bash(git remote -v) Bash(git remote get-url *) Bash(git remote set-head *) Bash(git fetch *) Bash(git log *) Bash(git diff *) Bash(git grep *) Bash(git ls-files *) Bash(git merge-base *) Bash(git switch -c *) Bash(git switch --no-track -c *) Bash(git switch main) Bash(git switch master) Bash(git add -A) Bash(git add -- *) Bash(git reset -q -- *) Bash(git commit *) Bash(git cherry-pick *) Bash(git push --recurse-submodules=check -u origin HEAD) Bash(git branch -vv) Bash(git branch -d *) Bash(git branch -D *) Bash(git branch -f *) Bash(gh auth status *) Bash(gh pr view *) Bash(gh pr list *) Bash(gh pr create *) Bash(gh pr merge * --squash --delete-branch --match-head-commit *) Bash(gh pr merge * --merge --delete-branch --match-head-commit *) Bash(gh pr merge * --rebase --delete-branch --match-head-commit *) Bash(gh pr merge * --squash --match-head-commit *) Bash(gh pr checks *) Bash(git merge --no-edit origin/*) Bash(git merge --abort) Bash(npm ci) Bash(npm run * --if-present) Bash(python -m pytest -q) Bash(pbir validate *) Bash(pbir desktop list *)
+allowed-tools: Bash(git status *) Bash(git rev-parse *) Bash(git remote -v) Bash(git remote get-url *) Bash(git remote set-head *) Bash(git fetch *) Bash(git log *) Bash(git diff *) Bash(git grep *) Bash(git ls-files *) Bash(git merge-base *) Bash(git switch -c *) Bash(git switch --no-track -c *) Bash(git switch main) Bash(git switch master) Bash(git add -A) Bash(git add -- *) Bash(git reset -q -- *) Bash(git commit *) Bash(git cherry-pick *) Bash(git push --recurse-submodules=check -u origin HEAD) Bash(git branch -vv) Bash(git branch -d *) Bash(git branch -D *) Bash(git branch -f *) Bash(gh auth status *) Bash(gh pr view *) Bash(gh pr list *) Bash(gh pr create *) Bash(gh pr merge * --squash --delete-branch --match-head-commit *) Bash(gh pr merge * --merge --delete-branch --match-head-commit *) Bash(gh pr merge * --rebase --delete-branch --match-head-commit *) Bash(gh pr merge * --squash --match-head-commit *) Bash(gh pr checks *) Bash(git merge --no-edit origin/*) Bash(git merge --abort) Bash(npm ci) Bash(npm run * --if-present) Bash(python -m pytest -q) Bash(pbir validate *) Bash(pbir desktop list *) Bash(python3 ~/.claude/skills/security-gate/scripts/gate.py *)
 ---
 
 # Ship
@@ -178,8 +178,16 @@ listed commit's matching lines with `git grep -n -i -E '<pattern>' <sha> -- <its
 secret one commit adds and a later one removes is still pushed); and read
 `git log --stat=400 --summary --format= HEAD --not --remotes=origin` with sizes from
 `git ls-files --format='%(objectsize) %(path)'`. A real secret, or a path the quarantine matches,
-is a stop-and-report. Then `git push --recurse-submodules=check -u origin HEAD`; a rejected push
 is a stop-and-report.
+
+**Security gate**, when `~/.claude/skills/security-gate/SKILL.md` exists: follow its diff mode
+now (gitleaks, dependencies, and a review subagent when code changed) and keep its three summary
+lines for the PR body. A live secret, or a gate that could not run (exit 2), is a
+stop-and-report and nothing is pushed. Any other blocker still pushes and opens the PR, and
+holds step 6. A fix the gate asks for (a fake key marked, a package upgraded) is committed by step
+4, staging only the files the fix changed; then repeat step 5 from the scan.
+
+Then `git push --recurse-submodules=check -u origin HEAD`; a rejected push is a stop-and-report.
 
 Empty origin (a first push), or not gh-ready: stop after the push and report.
 
@@ -195,6 +203,9 @@ gh pr create -R <url> --base <default> --head <branch> --title '<subject>' --bod
 ## Verified
 - what was actually checked (build, tests, a screenshot), or "Not verified"
 
+## Security
+- the security gate's three summary lines, or "Not run: <reason>"
+
 ## Merge Danger
 **Door:** one-way or two-way
 **Blast radius:** one word, then a line on what could break if it is wrong
@@ -209,12 +220,43 @@ history). **Blast radius** is who feels a mistake: `none`, `local`, `report`, `m
 Done when `gh pr view <branch> -R <url> --json number,url,state` returns an OPEN PR, or an early
 stop above is reported and any push it made succeeded.
 
+## No blast radius
+
+A PR has **no blast radius** when nothing that is built, deployed, published, scheduled or run
+reads any path it changes. Typical paths: notes and docs (`README.md`, `LEARNINGS.md`, `docs/`),
+agent instructions (`CLAUDE.md`, `AGENTS.md`), and folders the repo says are never built. Both
+tests must hold:
+
+- **No consequential path.** Nothing changed is:
+  - source code, build, deploy or CI config (`.github/**`, `wrangler.*`, an Eleventy or Vite
+    config), or a dependency manifest or lockfile
+  - data a pipeline, report or model reads, or content a build publishes (a `.md` inside a site's
+    input folder is content, not a note)
+  - agent configuration that runs or grants something: `.claude/settings*.json`, hooks and the
+    scripts they run, `.mcp.json`, and any command, agent or skill file whose frontmatter grants,
+    denies or configures tools, hooks, permissions or MCP servers (`allowed-tools`, `tools`,
+    `disallowedTools`, `hooks`, `permissionMode`, `mcpServers` and the like)
+  - a rule about committing, merging, deploying, permissions or security review, added, changed
+    or removed, in any file an agent loads as instructions: `CLAUDE.md`, `CLAUDE.local.md`,
+    `AGENTS.md`, `.claude/rules/**`, and a skill, command or agent file with the files it points
+    to. Judge a change to an existing rule by the default branch's copy
+- **Same build.** When a host or CI builds and deploys the repo (Workers Builds, Pages, Actions),
+  build the PR head and the default branch the same way and compare the output folders: they
+  must be identical. A build that cannot run here fails this test.
+
+Such a PR lands by step 6 without waiting for the user, even where the repo's CLAUDE.md holds PRs
+for the user's **deploy** or OK, and in a repo with no CI and no local checks. The PR body's Merge
+Danger says `Blast radius: none` and names the test that proved it. A PR that fails either test,
+or leaves any doubt, keeps the repo's rule. A repo rule of no commits ("no auto-commit") still
+means no commits at all.
+
 ## 6. Land (`merge` mode only)
 
 Nothing lands until the PR's head contains the current default branch, GitHub sees no conflict,
-and every check on that exact head has passed. 6.1 to 6.3 are that gate; a stop anywhere in it
-leaves the PR open and unmerged. Read `references/landing.md` when any command here does
-anything but succeed.
+every check on that exact head has passed, and the security gate is green for it. A PR with no
+blast radius (above) lands here even under a repo rule that waits for the user, and needs no local
+checks when the repo has no CI. 6.1 to 6.3 are that gate; a stop anywhere in it leaves the PR open
+and unmerged. Read `references/landing.md` when any command here does anything but succeed.
 
 1. **Up to date.** `git fetch origin <default>`, then
    `git merge-base --is-ancestor origin/<default> HEAD`. If that fails, merge the default branch
@@ -228,6 +270,8 @@ anything but succeed.
    `no checks reported` means no CI: run the local checks in `references/landing.md` instead.
    Then `mergeable` must say `MERGEABLE`, `headRefOid` must not have moved, and the default
    branch must not have moved (`git fetch origin <default>`; if it did, back to 6.1).
+   The security gate from step 5 must be green; when 6.1 merged anything in, run its script
+   once more on the merged head. A blocker is a stop-and-report: explain it as the gate says.
 4. **Merge**, pinned to the head that passed:
    `gh pr merge <pr url> -R <url> --squash --delete-branch --match-head-commit <headRefOid>`.
    Read `gh pr view <pr url> -R <url> --json state`: MERGED, or see `references/landing.md`.
@@ -247,8 +291,10 @@ branch, and every gone branch whose tip is a merged PR's head is deleted (or lis
 ## 7. Report
 
 Branch, commits (short sha and subject), unpushed default-branch commits that rode along, PR URL
-and state, quarantined paths, edits left unstaged, and every step skipped with its reason. In
-`merge` mode, also the gate: any merge of the default branch 6.1 made, and each check with its
-result (or each local command run instead). Read the PR state from `gh pr view`, not from memory.
+and state, quarantined paths, edits left unstaged, and every step skipped with its reason. Say
+when a PR landed under "No blast radius" and which test proved it. Give the security gate's
+three lines, and each blocker in plain English. In `merge` mode, also the gate: any merge of the
+default branch 6.1 made, and each check with its result (or each local command run instead).
+Read the PR state from `gh pr view`, not from memory.
 If files under a report that Desktop holds changed on disk, tell the user to accept Desktop's
 "Apply external changes" banner.

@@ -24,6 +24,10 @@ description.
 - **It looks for secrets.** Staged files, and every commit about to be pushed, are searched for
   common key, token, password and connection-string shapes, and the matching lines are read. It
   is a backstop, not a guarantee: read your diff before shipping to a public repo.
+- **It runs your security gate, if you have one.** When `~/.claude/skills/security-gate/SKILL.md`
+  exists, `/ship` follows that skill's diff mode before every push and puts its three summary
+  lines in the PR body under Security. A live secret, or a gate that cannot run, stops the push;
+  any other blocker opens the PR but holds the merge.
 - **It holds back files that rarely belong in git.** `.env` files, keys, embedded repos, files
   over 10 MB, the first data file of a new type (`.csv`, `.xlsx`, `.parquet` and similar), opaque
   binaries, and Power BI local state (`.pbi/cache.abf`, `.pbi/localSettings.json`, a new `.pbix`)
@@ -43,6 +47,12 @@ description.
   the PR left open. It never resolves a conflict itself. A repo with no CI gets its own
   `typecheck`, `lint`, `test` and `build` scripts, `pytest` or `pbir validate` run locally
   instead, and a repo with no checks at all is not merged without asking.
+- **It lands notes without the wait.** A PR with no blast radius changes only paths that nothing
+  built, deployed or run reads: notes, docs, and agent instructions, but not Claude Code settings,
+  hooks, MCP config, tool grants, or a rule about committing, merging, deploying, permissions or
+  security review, wherever it is written. When a host or CI builds the repo, the PR's build
+  output must also match the default branch's. `/ship merge` lands such a PR even in a repo that
+  holds PRs for your OK, and in one with no checks.
 - **It only merges when you say `merge`.** Plain `/ship` stops at an open PR.
 
 ## Requirements

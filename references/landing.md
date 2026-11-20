@@ -34,6 +34,7 @@ what the repo itself defines, and require exit 0 from every command:
 - A Python project with a pytest configuration: `python -m pytest -q`.
 - A PBIP repo with pbir installed: `pbir validate "<path>.Report"` for each report the PR changes.
 - A repo that defines no checks at all: stop and ask. Merging unchecked work is the user's call.
+  A PR with no blast radius (SKILL.md) is the exception: it lands without checks.
 
 ## 6.4 When the merge command refuses
 
