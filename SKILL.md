@@ -184,7 +184,8 @@ is a stop-and-report.
 now (gitleaks, dependencies, and a review subagent when code changed) and keep its three summary
 lines for the PR body. A live secret, or a gate that could not run (exit 2), is a
 stop-and-report and nothing is pushed. Any other blocker still pushes and opens the PR, and
-holds step 6.
+holds step 6. A fix the gate asks for (a fake key marked, a package upgraded) is committed by step
+4, staging only the files the fix changed; then repeat step 5 from the scan.
 
 Then `git push --recurse-submodules=check -u origin HEAD`; a rejected push is a stop-and-report.
 
@@ -223,13 +224,19 @@ stop above is reported and any push it made succeeded.
 
 A PR has **no blast radius** when nothing that is built, deployed, published, scheduled or run
 reads any path it changes. Typical paths: notes and docs (`README.md`, `LEARNINGS.md`, `docs/`),
-agent instructions and settings (`CLAUDE.md`, `AGENTS.md`, `.claude/**`), and folders the repo
-says are never built. Both tests must hold:
+agent instructions (`CLAUDE.md`, `AGENTS.md`), and folders the repo says are never built. Both
+tests must hold:
 
-- **No consequential path.** Nothing changed is source code, build, deploy or CI config
-  (`.github/**`, `wrangler.*`, an Eleventy or Vite config), a dependency manifest or lockfile, data
-  a pipeline, report or model reads, or content a build publishes (a `.md` inside a site's input
-  folder is content, not a note).
+- **No consequential path.** Nothing changed is:
+  - source code, build, deploy or CI config (`.github/**`, `wrangler.*`, an Eleventy or Vite
+    config), or a dependency manifest or lockfile
+  - data a pipeline, report or model reads, or content a build publishes (a `.md` inside a site's
+    input folder is content, not a note)
+  - agent configuration that runs or grants something: `.claude/settings*.json`, hooks and the
+    scripts they run, `.mcp.json`, and any command, agent or skill file whose frontmatter sets
+    `allowed-tools`, `tools` or `hooks`
+  - a rule in `CLAUDE.md` or `AGENTS.md` about committing, merging, deploying or permissions, as
+    the default branch's copy states it
 - **Same build.** When a host or CI builds and deploys the repo (Workers Builds, Pages, Actions),
   build the PR head and the default branch the same way and compare the output folders: they
   must be identical. A build that cannot run here fails this test.
